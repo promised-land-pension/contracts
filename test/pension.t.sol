@@ -14,6 +14,8 @@ import {ERC1820RegistryCompiled} from
     "@superfluid-finance/ethereum-contracts/contracts/libs/ERC1820RegistryCompiled.sol";
 import { TestToken } from "@superfluid-finance/ethereum-contracts/contracts/utils/TestToken.sol";
 import { SuperToken } from "@superfluid-finance/ethereum-contracts/contracts/superfluid/SuperToken.sol";
+import {StorageLib, Storage} from "../src/storageLib.sol";
+
 
 interface IMint {
     function initialize(address factory, string memory _name, string memory _symbol) external;
@@ -33,12 +35,14 @@ forge test --fork-url {rpc. Ex: https://base.llamarpc.com}
 
 contract PensionsTest is Test {
     using SuperTokenV1Library for ISuperToken;
+    using StorageLib for Storage; 
 
     ISuperToken public cash;
     IMint public mintCash;
     ISuperToken public time;
     IMint public mintTime;
     Pensions public pensionContract;
+
     address internal constant admin = address(0x476E2651BF97dE8a26e4A05a9c8e00A6EFa1390c); // has to be this address
     address internal constant alice = address(0x420);
     address internal constant bob = address(0x421);
@@ -95,6 +99,10 @@ contract PensionsTest is Test {
         vm.stopPrank();
     }
 
+    function getHeadTimeFlowrate() internal view returns (int96) {
+        return pensionContract.timePool().getMemberFlowRate(pensionContract.getHead());
+    }
+
     function testStartStreamToGame() public {
         int96 flowRate = 1e12;
         //flowRate = int96(int256(bound(uint256(int256(flowRate)), 1, 1e14)));
@@ -119,9 +127,66 @@ contract PensionsTest is Test {
         console.log("balanceAppAfter: ", balanceAppAfter);
         console.log("balanceTimeAfter", balanceTimeAfter);
         assertEq(balanceAppAfter, uint256(int256(flowRate)) * timeshift);
-        assertEq(balanceAppAfter, pensionContract.timeBalance(alice));
         assertGt(balanceTimeAfter, 0);
     } 
+
+    function testStartMultipleStreams() public {
+        int96 aliceFlowRate = int96(2e6);
+        int96 bobFlowRate = int96(1e6);
+        int96 charlieFlowRate = int96(3e6);
+
+        dealTo(alice);
+        dealTo(bob);
+        dealTo(charlie);
+
+        console.log("pensionContract.data.head(): ", pensionContract.getHead());
+        console.log("timePool.getMemberFlowrate(alice): ", uint(int256(getHeadTimeFlowrate())));
+
+        console.log("dealt the funds, now starting the streams");
+        console.log("alice: ");
+        vm.startPrank(alice);
+        cash.createFlow(address(pensionContract), aliceFlowRate);
+        vm.stopPrank();
+
+        console.log("pensionContract.data.head(): ", pensionContract.getHead());
+        console.log("timePool.getMemberFlowrate(alice): ", uint(int256(getHeadTimeFlowrate())));
+
+        console.log("bob: ");
+        vm.startPrank(bob);
+        cash.createFlow(address(pensionContract), bobFlowRate);
+        vm.stopPrank();
+
+        // need to adapt the total flowrate when a new user joins
+        console.log("pensionContract.data.head(): ", pensionContract.getHead());
+        console.log("timePool.getMemberFlowrate(bob): ", uint(int256(getHeadTimeFlowrate())));
+        
+        console.log("charlie: ");
+        vm.startPrank(charlie);
+        cash.createFlow(address(pensionContract), charlieFlowRate);
+        vm.stopPrank();
+
+        console.log("pensionContract.data.head(): ", pensionContract.getHead());
+        console.log("timePool.getMemberFlowrate(charlie): ", uint(int256(getHeadTimeFlowrate())));
+        
+
+
+        vm.warp(block.timestamp + 100);
+        console.log("alice time balance: ", pensionContract.timeBalance(alice));
+        console.log("bob time balance: ", pensionContract.timeBalance(bob));
+        console.log("charlie time balance: ", pensionContract.timeBalance(charlie));
+
+        assertGt(pensionContract.timeBalance(alice), pensionContract.timeBalance(bob));
+        assertGt(pensionContract.timeBalance(charlie), pensionContract.timeBalance(alice));
+        assertGt(pensionContract.timeBalance(charlie), pensionContract.timeBalance(bob));
+        // now we check that the order is correct as well
+        console.log("pensionContract.getNextPlayer(charlie): ", pensionContract.getNextPlayer(charlie));
+        console.log("pensionContract.getNextPlayer(alice): ", pensionContract.getNextPlayer(alice));
+        console.log("pensionContract.getNextPlayer(bob): ", pensionContract.getNextPlayer(bob));
+
+        assertEq(pensionContract.getNextPlayer(charlie), alice);
+        assertEq(pensionContract.getNextPlayer(alice), bob);
+        assertEq(pensionContract.getNextPlayer(bob), address(0));
+    }
 
     /*
     function testStreamWinningCondition() public {

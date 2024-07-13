@@ -11,11 +11,6 @@ import {StorageLib, Storage} from "./storageLib.sol";
 import "forge-std/console.sol";
 import "forge-std/console2.sol";
 
-
-function mul_div(Value a, Value b, Value c) pure returns (Value) {
-    return Value.wrap(Value.unwrap(a) * Value.unwrap(b) / Value.unwrap(c));
-}
-
 interface IMintableSuperToken {
     function burn(uint256 amount) external;
 }
@@ -44,6 +39,9 @@ contract Pensions is SuperAppBaseFlow {
     ****/
 
     Storage public data;
+    function getHead() public view returns (address) {
+        return data.head;
+    }
 
     uint256 public retirementAge; // current time in seconds
 
@@ -53,7 +51,7 @@ contract Pensions is SuperAppBaseFlow {
 
     ISuperToken immutable public cash;
     ISuperToken immutable public time;
-    ISuperfluidPool immutable timePool;
+    ISuperfluidPool immutable public timePool;
 
     mapping(ISuperToken => bool) internal _acceptedSuperTokens;
 
@@ -76,10 +74,9 @@ contract Pensions is SuperAppBaseFlow {
         timePool.updateMemberUnits(sender, units);
     }
 
-    function adjustTIMEFlowrate(address sender) internal {
-        if(sender != data.head) return;
+    function adjustTIMEFlowrate(address sender, bytes memory ctx) internal returns(bytes memory newCtx) {
         // Top streamer should get 1 TIME per hour
-        // everyae else should be adjusted accordingly
+        // everyone else should be adjusted accordingly
         uint128 totalUnits = timePool.getTotalUnits();
         int96 benchmarkTIME = 1e18 / int96(3600);
         // units are equivalent to the user's flowrate, so we can assume 
@@ -88,11 +85,12 @@ contract Pensions is SuperAppBaseFlow {
         int96 TIMEperUnit = benchmarkTIME / int96(int128(headUnits)); 
         int96 totalFlow = TIMEperUnit * int96(int128(totalUnits));
         // we need to make sure that the user is getting a TIMEPerHour flowrate
-
-        time.distributeFlow(
+        
+        newCtx = time.distributeFlowWithCtx(
             address(this),
             timePool,
-            totalFlow
+            totalFlow,
+            ctx
         );
     }
 
@@ -120,8 +118,7 @@ contract Pensions is SuperAppBaseFlow {
         int96 flowRate = cash.getFlowRate(sender, address(this));
         data.addPlayer(sender, flowRate);
         updateTimeUnits(sender);
-        adjustTIMEFlowrate(sender);
-        return ctx;
+        return adjustTIMEFlowrate(sender, ctx);
     }
 
     // UPDATE
@@ -135,8 +132,7 @@ contract Pensions is SuperAppBaseFlow {
         int96 flowRate = cash.getFlowRate(sender, address(this));
         data.updatePlayer(sender, flowRate);
         updateTimeUnits(sender);
-        adjustTIMEFlowrate(sender);
-        return ctx;
+        return adjustTIMEFlowrate(sender, ctx);
     }
 
     // DELETE
@@ -151,8 +147,7 @@ contract Pensions is SuperAppBaseFlow {
         if(receiver != address(this)) return ctx;
         data.removePlayer(sender);
         updateTimeUnits(sender);
-        adjustTIMEFlowrate(sender);
-        return ctx;
+        return adjustTIMEFlowrate(sender, ctx);
     }
 
     /* HELPERS */
@@ -161,8 +156,12 @@ contract Pensions is SuperAppBaseFlow {
      * @param p The player.
      * @return tb The time balance.
      */
-     function timeBalance(address p) public view returns (uint256 tb) {
+    function timeBalance(address p) public view returns (uint256 tb) {
         (int256 claimableBalance, ) = timePool.getClaimableNow(p);
         tb = uint256(claimableBalance);
+    }
+
+    function getNextPlayer(address p) public view returns (address) {
+        return data.list[p].next;
     }
 }
