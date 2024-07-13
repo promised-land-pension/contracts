@@ -184,9 +184,9 @@ contract PensionsTest is Test {
         assertGt(pensionContract.timeBalance(charlie), pensionContract.timeBalance(alice));
         assertGt(pensionContract.timeBalance(charlie), pensionContract.timeBalance(bob));
         // now we check that the order is correct as well
-        console.log("pensionContract.getNextPlayer(charlie): ", pensionContract.getNextPlayer(charlie));
-        console.log("pensionContract.getNextPlayer(alice): ", pensionContract.getNextPlayer(alice));
-        console.log("pensionContract.getNextPlayer(bob): ", pensionContract.getNextPlayer(bob));
+        console.log("pensionContract.getNextPlayer(charlie) -> \t", nameOf(pensionContract.getNextPlayer(charlie)), "\t ", uint256(int256(cash.getFlowRate(charlie, address(pensionContract)))));
+        console.log("pensionContract.getNextPlayer(alice) -> \t", nameOf(pensionContract.getNextPlayer(alice)), "\t\t ", uint256(int256(cash.getFlowRate(alice, address(pensionContract)))));
+        console.log("pensionContract.getNextPlayer(bob) -> \t", nameOf(pensionContract.getNextPlayer(bob)), "\t ", uint256(int256(cash.getFlowRate(bob, address(pensionContract)))));
 
         assertEq(pensionContract.getNextPlayer(charlie), alice);
         assertEq(pensionContract.getNextPlayer(alice), bob);
@@ -194,6 +194,7 @@ contract PensionsTest is Test {
     }
 
     function testClaimPension () public {
+        assertTrue(!ISuperfluid(cash.getHost()).isAppJailed(ISuperApp(address(pensionContract))));
         dealTo(alice);
         vm.startPrank(alice);
         cash.createFlow(address(pensionContract), 1e6);
@@ -205,27 +206,38 @@ contract PensionsTest is Test {
         console.log("flowrate of alice: ", uint256(int256(timePool.getMemberFlowRate(alice))));
 
         console.log("balance of app: ", cash.balanceOf(address(pensionContract)));
-        console.log("totalPensionFlowRate: ", uint256(int256(pensionContract.totalPensionFlowRate())));
+        console.log("totalPensionFlowRateTarget: ", uint256(int256(pensionContract.totalPensionFlowRateTarget())));
+        assertTrue(!ISuperfluid(cash.getHost()).isAppJailed(ISuperApp(address(pensionContract))));
 
         vm.startPrank(alice);
-        vm.expectRevert();
-        pensionContract.claimPension();
+        cash.deleteFlow(alice, address(pensionContract));
+        assertEq(cashPool.getMemberFlowRate(alice), 0);
         vm.stopPrank();
 
         console.log("time balance of alice: ", pensionContract.timeBalance(alice));
         console.log("flowrate of alice: ", uint256(int256(timePool.getMemberFlowRate(alice))));
+        assertTrue(!ISuperfluid(cash.getHost()).isAppJailed(ISuperApp(address(pensionContract))));
 
         console.log("balance of app: ", cash.balanceOf(address(pensionContract)));
-        console.log("totalPensionFlowRate: ", uint256(int256(pensionContract.totalPensionFlowRate())));
+        console.log("totalPensionFlowRateTarget: ", uint256(int256(pensionContract.totalPensionFlowRateTarget())));
 
-        
+        vm.startPrank(alice);
+        cash.createFlow(address(pensionContract), 1e6);
+        vm.stopPrank();
+
         vm.warp(block.timestamp + pensionContract.retirementAge());
         vm.startPrank(alice);
         console.log("claim pension");
         console.log("timeBalance(alice): \t", pensionContract.timeBalance(alice));
-        console.log("retirementAge: \t", pensionContract.retirementAge());
-        console.log("timeBalance(msg.sender) < retirementAge * 1e18: ", pensionContract.timeBalance(alice) < pensionContract.retirementAge());
-        pensionContract.claimPension();
+        console.log("retirementAge: \t", pensionContract.retirementAge() *1e18);
+        console.log("timeBalance(msg.sender) > retirementAge * 1e18: ", pensionContract.timeBalance(alice) > pensionContract.retirementAge() *1e18);
+        cash.deleteFlow(alice, address(pensionContract));
+        console.log("flow closed");
+        console.log("timeBalance(alice): \t", pensionContract.timeBalance(alice));
+        console.log("retirementAge: \t", pensionContract.retirementAge() *1e18);
+        console.log("timeBalance(msg.sender) > retirementAge * 1e18: ", pensionContract.timeBalance(alice) > pensionContract.retirementAge() *1e18);
+        assertTrue(!ISuperfluid(cash.getHost()).isAppJailed(ISuperApp(address(pensionContract))));
+
         cash.connectPool(pensionContract.cashPool());
         vm.stopPrank();
 
