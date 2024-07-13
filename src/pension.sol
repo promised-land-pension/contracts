@@ -49,8 +49,8 @@ contract Pensions is SuperAppBaseFlow {
         return pensioners.head;
     }
 
-    uint256 public retirementAge = 24 hours;
-
+    uint256 public retirementAge = 60*60*24; // 24 hours in seconds. 
+    
     int96 public constant SCALING_FACTOR = 1e6;
 
     ISuperToken immutable public cash;
@@ -84,7 +84,7 @@ contract Pensions is SuperAppBaseFlow {
         // Top streamer should get 1 TIME per hour
         // everyone else should be adjusted accordingly
         uint128 totalUnits = timePool.getTotalUnits();
-        int96 benchmarkTIME = 1e18 / int96(3600);
+        int96 benchmarkTIME = 1e18;
         // units are equivalent to the user's flowrate, so we can assume 
         uint128 headUnits = timePool.getUnits(workers.head); 
         // per unit, should be benchmarkTIME / units
@@ -105,7 +105,7 @@ contract Pensions is SuperAppBaseFlow {
         // check if the user has reached retirement age
         // if they have, claim the pension
         // if they have not, revert
-        if(timeBalance(msg.sender) < retirementAge) revert("Not retired");
+        if(timeBalance(msg.sender) < retirementAge*1e18) revert("Not retired");
         // claim the pension
         // remove user from the list
         // add them to adifferent list? 
@@ -116,9 +116,9 @@ contract Pensions is SuperAppBaseFlow {
         retirementAge += 3600;
     }
 
-    function totalPensionFlowRate() internal view returns (int96) {
+    function totalPensionFlowRate() public view returns (int96) {
         uint256 totalCashBalance = cash.balanceOf(address(this));
-        return int96(int256(totalCashBalance / (retirementAge) * 60 * 60));
+        return int96(int256(totalCashBalance / retirementAge));
     }
 
     /* PENSION payment functions */
@@ -172,9 +172,9 @@ contract Pensions is SuperAppBaseFlow {
      * @param p The player.
      * @return tb The time balance.
      */
-    function timeBalance(address p) public view returns (uint256 tb) {
+    function timeBalance(address p) public view returns (uint256) {
         (int256 claimableBalance, ) = timePool.getClaimableNow(p);
-        tb = uint256(claimableBalance);
+        return uint256(claimableBalance);
     }
 
     function getNextPlayer(address p) public view returns (address) {

@@ -43,6 +43,9 @@ contract PensionsTest is Test {
     IMint public mintTime;
     Pensions public pensionContract;
 
+    ISuperfluidPool cashPool;
+    ISuperfluidPool timePool;
+
     address internal constant admin = address(0x476E2651BF97dE8a26e4A05a9c8e00A6EFa1390c); // has to be this address
     address internal constant alice = address(0x420);
     address internal constant bob = address(0x421);
@@ -86,9 +89,11 @@ contract PensionsTest is Test {
 
         pensionContract = new Pensions(cash, time);
         address pensionContractAddress = address(pensionContract);
+        cashPool = pensionContract.cashPool();
+        timePool = pensionContract.timePool();
         console.log("deployed pensionContract: ", pensionContractAddress);
         vm.startPrank(admin);
-        mintTime.mint(pensionContractAddress, 200 ether);
+        mintTime.mint(pensionContractAddress, 1e12 ether);
 
         console.log("deployed pensionContract: ", address(pensionContract));
     }
@@ -100,7 +105,7 @@ contract PensionsTest is Test {
     }
 
     function getWorkerHeadTimeFlowrate() internal view returns (int96) {
-        return pensionContract.timePool().getMemberFlowRate(pensionContract.getWorkerHead());
+        return timePool.getMemberFlowRate(pensionContract.getWorkerHead());
     }
 
     function testStartStreamToGame() public {
@@ -195,21 +200,39 @@ contract PensionsTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 hours);
+
+        console.log("time balance of alice: ", pensionContract.timeBalance(alice));
+        console.log("flowrate of alice: ", uint256(int256(timePool.getMemberFlowRate(alice))));
+
+        console.log("balance of app: ", cash.balanceOf(address(pensionContract)));
+        console.log("totalPensionFlowRate: ", uint256(int256(pensionContract.totalPensionFlowRate())));
+
         vm.startPrank(alice);
         vm.expectRevert();
         pensionContract.claimPension();
         vm.stopPrank();
 
+        console.log("time balance of alice: ", pensionContract.timeBalance(alice));
+        console.log("flowrate of alice: ", uint256(int256(timePool.getMemberFlowRate(alice))));
+
+        console.log("balance of app: ", cash.balanceOf(address(pensionContract)));
+        console.log("totalPensionFlowRate: ", uint256(int256(pensionContract.totalPensionFlowRate())));
+
+        
         vm.warp(block.timestamp + pensionContract.retirementAge());
         vm.startPrank(alice);
+        console.log("claim pension");
+        console.log("timeBalance(alice): \t", pensionContract.timeBalance(alice));
+        console.log("retirementAge: \t", pensionContract.retirementAge());
+        console.log("timeBalance(msg.sender) < retirementAge * 1e18: ", pensionContract.timeBalance(alice) < pensionContract.retirementAge());
         pensionContract.claimPension();
         cash.connectPool(pensionContract.cashPool());
         vm.stopPrank();
 
         console.log("balance of alice: ", cash.balanceOf(alice));
-        console.log("cashPool.getTotalUnits: ", pensionContract.cashPool().getTotalUnits());
-        console.log("cashPool.getMemberUnits(alice): ", pensionContract.cashPool.getMemberUnits(alice));
-        console.log("cashPool.getFlowRate(alice): ", pensionContract.cashPool.getFlowRate(alice));
+        console.log("cashPool.getTotalUnits: ", cashPool.getTotalUnits());
+        console.log("cashPool.getMemberUnits(alice): ", cashPool.getUnits(alice));
+        console.log("cashPool.getFlowRate(alice): ", uint256(int256(cashPool.getMemberFlowRate(alice))));
     }
 
     /*
