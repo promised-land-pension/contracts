@@ -99,8 +99,8 @@ contract PensionsTest is Test {
         vm.stopPrank();
     }
 
-    function getHeadTimeFlowrate() internal view returns (int96) {
-        return pensionContract.timePool().getMemberFlowRate(pensionContract.getHead());
+    function getWorkerHeadTimeFlowrate() internal view returns (int96) {
+        return pensionContract.timePool().getMemberFlowRate(pensionContract.getWorkerHead());
     }
 
     function testStartStreamToGame() public {
@@ -139,8 +139,8 @@ contract PensionsTest is Test {
         dealTo(bob);
         dealTo(charlie);
 
-        console.log("pensionContract.data.head(): ", pensionContract.getHead());
-        console.log("timePool.getMemberFlowrate(alice): ", uint(int256(getHeadTimeFlowrate())));
+        console.log("pensionContract.workers.head(): ", pensionContract.getWorkerHead());
+        console.log("timePool.getMemberFlowrate(alice): ", uint(int256(getWorkerHeadTimeFlowrate())));
 
         console.log("dealt the funds, now starting the streams");
         console.log("alice: ");
@@ -148,8 +148,8 @@ contract PensionsTest is Test {
         cash.createFlow(address(pensionContract), aliceFlowRate);
         vm.stopPrank();
 
-        console.log("pensionContract.data.head(): ", pensionContract.getHead());
-        console.log("timePool.getMemberFlowrate(alice): ", uint(int256(getHeadTimeFlowrate())));
+        console.log("pensionContract.workers.head(): ", pensionContract.getWorkerHead());
+        console.log("timePool.getMemberFlowrate(alice): ", uint(int256(getWorkerHeadTimeFlowrate())));
 
         console.log("bob: ");
         vm.startPrank(bob);
@@ -157,16 +157,16 @@ contract PensionsTest is Test {
         vm.stopPrank();
 
         // need to adapt the total flowrate when a new user joins
-        console.log("pensionContract.data.head(): ", pensionContract.getHead());
-        console.log("timePool.getMemberFlowrate(bob): ", uint(int256(getHeadTimeFlowrate())));
+        console.log("pensionContract.workers.head(): ", pensionContract.getWorkerHead());
+        console.log("timePool.getMemberFlowrate(bob): ", uint(int256(getWorkerHeadTimeFlowrate())));
         
         console.log("charlie: ");
         vm.startPrank(charlie);
         cash.createFlow(address(pensionContract), charlieFlowRate);
         vm.stopPrank();
 
-        console.log("pensionContract.data.head(): ", pensionContract.getHead());
-        console.log("timePool.getMemberFlowrate(charlie): ", uint(int256(getHeadTimeFlowrate())));
+        console.log("pensionContract.workers.head(): ", pensionContract.getWorkerHead());
+        console.log("timePool.getMemberFlowrate(charlie): ", uint(int256(getWorkerHeadTimeFlowrate())));
         
 
 
@@ -186,6 +186,30 @@ contract PensionsTest is Test {
         assertEq(pensionContract.getNextPlayer(charlie), alice);
         assertEq(pensionContract.getNextPlayer(alice), bob);
         assertEq(pensionContract.getNextPlayer(bob), address(0));
+    }
+
+    function testClaimPension () public {
+        dealTo(alice);
+        vm.startPrank(alice);
+        cash.createFlow(address(pensionContract), 1e6);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 1 hours);
+        vm.startPrank(alice);
+        vm.expectRevert();
+        pensionContract.claimPension();
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + pensionContract.retirementAge());
+        vm.startPrank(alice);
+        pensionContract.claimPension();
+        cash.connectPool(pensionContract.cashPool());
+        vm.stopPrank();
+
+        console.log("balance of alice: ", cash.balanceOf(alice));
+        console.log("cashPool.getTotalUnits: ", pensionContract.cashPool().getTotalUnits());
+        console.log("cashPool.getMemberUnits(alice): ", pensionContract.cashPool.getMemberUnits(alice));
+        console.log("cashPool.getFlowRate(alice): ", pensionContract.cashPool.getFlowRate(alice));
     }
 
     /*

@@ -38,38 +38,44 @@ contract Pensions is SuperAppBaseFlow {
 
     ****/
 
-    Storage public data;
-    function getHead() public view returns (address) {
-        return data.head;
+    Storage public workers;
+    Storage public pensioners;
+
+    function getWorkerHead() public view returns (address) {
+        return workers.head;
     }
 
-    uint256 public retirementAge; // current time in seconds
+    function getPensionersHead() public view returns (address) {
+        return pensioners.head;
+    }
 
-    mapping(uint256 => address) public pensioners;
+    uint256 public retirementAge = 24 hours;
 
     int96 public constant SCALING_FACTOR = 1e6;
 
     ISuperToken immutable public cash;
     ISuperToken immutable public time;
     ISuperfluidPool immutable public timePool;
+    ISuperfluidPool immutable public cashPool;
 
     mapping(ISuperToken => bool) internal _acceptedSuperTokens;
 
     constructor
         (ISuperToken _cash, ISuperToken _time) 
-        SuperAppBaseFlow(ISuperfluid(_cash.getHost()), true, true, true,string("")) {
+        SuperAppBaseFlow(ISuperfluid(_cash.getHost()), true, true, true, string("")) {
             //selfRegister(true,true,true);
             cash = _cash;
             _acceptedSuperTokens[cash] = true;
             // make sure this contract has been given a bunch of time tokens
             time = _time;
             // create a GDA
-            timePool = time.createPool(address(this), PoolConfig({transferabilityForUnitsOwner: false, distributionFromAnyAddress: true}));
+            timePool = time.createPool(address(this), PoolConfig({transferabilityForUnitsOwner: false, distributionFromAnyAddress: false}));
+            cashPool = cash.createPool(address(this), PoolConfig({transferabilityForUnitsOwner: false, distributionFromAnyAddress: true}));
         }
     
     /* TIME AUCTION HELPERS */ 
     function updateTimeUnits(address sender) internal {
-        int96 flowrate = data.list[sender].flowrate;
+        int96 flowrate = workers.list[sender].flowrate;
         uint128 units = uint128(int128(flowrate / SCALING_FACTOR));
         timePool.updateMemberUnits(sender, units);
     }
@@ -80,7 +86,7 @@ contract Pensions is SuperAppBaseFlow {
         uint128 totalUnits = timePool.getTotalUnits();
         int96 benchmarkTIME = 1e18 / int96(3600);
         // units are equivalent to the user's flowrate, so we can assume 
-        uint128 headUnits = timePool.getUnits(data.head); 
+        uint128 headUnits = timePool.getUnits(workers.head); 
         // per unit, should be benchmarkTIME / units
         int96 TIMEperUnit = benchmarkTIME / int96(int128(headUnits)); 
         int96 totalFlow = TIMEperUnit * int96(int128(totalUnits));
@@ -95,7 +101,7 @@ contract Pensions is SuperAppBaseFlow {
     }
 
     /* PENSION claiming functions */ 
-    function claimPension() internal {
+    function claimPension() public {
         // check if the user has reached retirement age
         // if they have, claim the pension
         // if they have not, revert
@@ -103,6 +109,16 @@ contract Pensions is SuperAppBaseFlow {
         // claim the pension
         // remove user from the list
         // add them to adifferent list? 
+        workers.removePlayer(msg.sender); // removed them from the list
+        updateTimeUnits(msg.sender); // removes their TIME flow
+        cashPool.updateMemberUnits(msg.sender, 1);
+        cash.distributeFlow(address(this), cashPool, totalPensionFlowRate());
+        retirementAge += 3600;
+    }
+
+    function totalPensionFlowRate() internal view returns (int96) {
+        uint256 totalCashBalance = cash.balanceOf(address(this));
+        return int96(int256(totalCashBalance / (retirementAge) * 60 * 60));
     }
 
     /* PENSION payment functions */
@@ -116,7 +132,7 @@ contract Pensions is SuperAppBaseFlow {
         returns (bytes memory)
     {
         int96 flowRate = cash.getFlowRate(sender, address(this));
-        data.addPlayer(sender, flowRate);
+        workers.addPlayer(sender, flowRate);
         updateTimeUnits(sender);
         return adjustTIMEFlowrate(sender, ctx);
     }
@@ -130,7 +146,7 @@ contract Pensions is SuperAppBaseFlow {
         bytes calldata ctx
     ) internal override returns (bytes memory) {
         int96 flowRate = cash.getFlowRate(sender, address(this));
-        data.updatePlayer(sender, flowRate);
+        workers.updatePlayer(sender, flowRate);
         updateTimeUnits(sender);
         return adjustTIMEFlowrate(sender, ctx);
     }
@@ -145,7 +161,7 @@ contract Pensions is SuperAppBaseFlow {
         bytes calldata ctx
     ) internal override returns (bytes memory) {
         if(receiver != address(this)) return ctx;
-        data.removePlayer(sender);
+        workers.removePlayer(sender);
         updateTimeUnits(sender);
         return adjustTIMEFlowrate(sender, ctx);
     }
@@ -162,6 +178,6 @@ contract Pensions is SuperAppBaseFlow {
     }
 
     function getNextPlayer(address p) public view returns (address) {
-        return data.list[p].next;
+        return workers.list[p].next;
     }
 }
